@@ -1,123 +1,73 @@
 # CI Pipeline — SmartLearn AI API
 
-## What this pipeline does
+## Overview
 
-Every pull request targeting `main` must pass two gates before it can be merged:
+Every pull request targeting `main` must pass two gates before merging:
 
-| Gate | Job | Fail = PR blocked? |
+| Gate | Job | Blocks PR |
 |---|---|---|
-| Unit tests pass | `test` | Yes (once branch protection is set) |
+| Unit tests | `test` | Yes |
 | SonarQube Quality Gate | `sonar` | Yes |
-
-SonarQube results (issues, coverage, Quality Gate verdict) are visible directly on the PR via the SonarQube/SonarCloud PR decoration feature.
-
----
 
 ## Files
 
 ```
-.github/
-  workflows/
-    ci.yml                ← the pipeline definition
-sonar-project.properties  ← tells Sonar what to scan
-docs/
-  pipeline.md             ← this file
+.github/workflows/ci.yml
+sonar-project.properties
+docs/pipeline.md
 ```
 
----
+## Setup
 
-## One-time setup (do this once, then forget it)
+### Secrets
 
-### 1 — Add secrets to the repo
+Add these in Settings → Secrets and variables → Actions:
 
-Go to **Settings → Secrets and variables → Actions → New repository secret**.
-
-| Secret name | Value |
+| Secret | Value |
 |---|---|
-| `SONAR_TOKEN` | Token generated in SonarQube: *My Account → Security → Generate Token* |
-| `SONAR_HOST_URL` | Your SonarQube server URL, e.g. `http://your-server:9000` |
+| `SONAR_TOKEN` | Token from SonarCloud: My Account → Security → Generate Token |
+| `SONAR_HOST_URL` | `https://sonarcloud.io` |
 
-> **SonarCloud instead of self-hosted?** Set `SONAR_HOST_URL` to `https://sonarcloud.io`, uncomment `sonar.organization` in `sonar-project.properties`, and remove `SONAR_HOST_URL` from the env section of `ci.yml` (SonarCloud infers it).
-
-### 2 — Create the project in SonarQube
-
-In the SonarQube UI: **Create Project → Manually**.  
-Set the project key to exactly `Intelligent_E_Learning_Platform` (must match `sonar.projectKey`).  
-Select **"Clean as You Code"** as the analysis method — this scopes the Quality Gate to new code only, so old issues don't block every PR.
-
-### 3 — Enable PR decoration (so results show on the PR)
-
-In SonarQube: **Administration → DevOps Platform Integrations → GitHub**.  
-Add your GitHub App credentials. After this, Sonar posts a comment and status check directly on each PR.
-
-### 4 — Set branch protection on main
-
-Do this **after** opening one test PR so the checks appear in the dropdown.
+### Branch protection on main
 
 Settings → Branches → main → Edit:
 
-- ✅ Require a pull request before merging
-- ✅ Require status checks to pass before merging
-  - Add: `Run Tests` (the `test` job)
-  - Add: `SonarQube Scan` (the `sonar` job)
-- ✅ Require branches to be up to date before merging
-
-> ⚠️ Do **not** enable "Require code quality results" — that's GitHub's own CodeQL integration, not SonarQube.
-
----
+- Require a pull request before merging
+- Require status checks to pass:
+  - `Run Tests`
+  - `SonarQube Scan`
+- Require branches to be up to date before merging
 
 ## How the Quality Gate works
 
-The pipeline uses SonarQube's **"Clean as You Code"** mode. The gate evaluates **only the lines changed in the PR**, not the entire codebase. This means:
-
-- Pre-existing issues in untouched files → **not gated, won't block your PR**
-- New issues introduced in your PR diff → **gated, will block**
-
-Default thresholds (configurable in SonarQube → Quality Gates):
-
-| Metric | Threshold |
-|---|---|
-| New bugs | 0 |
-| New vulnerabilities | 0 |
-| New code smells coverage | Warn only |
-| New code coverage | ≥ 80% (adjust to taste) |
-
----
+Uses SonarCloud's Clean as You Code mode. Only lines changed in the PR are evaluated. Pre-existing issues in untouched files do not block the PR.
 
 ## Extending the pipeline
 
-### Add a new check (e.g. linting)
-
-Add a step inside the `test` job, before pytest:
+### Add linting
 
 ```yaml
 - name: Lint with flake8
   run: |
     pip install flake8
-    flake8 . --max-line-length=120 --exclude=migrations,__pycache__
+    flake8 backend/ --max-line-length=120 --exclude=__pycache__
 ```
 
-### Add SAST (Bandit — Python security linter)
+### Add SAST (Bandit)
 
 ```yaml
 - name: Bandit SAST scan
   run: |
     pip install bandit
-    bandit -r . -x ./tests -f json -o bandit-report.json || true
-
-- name: Upload Bandit report
-  uses: actions/upload-artifact@v4
-  with:
-    name: bandit-report
-    path: bandit-report.json
+    bandit -r backend/ -f json -o bandit-report.json || true
 ```
 
-SonarQube can also ingest Bandit output — add to `sonar-project.properties`:
+Add to sonar-project.properties:
 ```
 sonar.python.bandit.reportPaths=bandit-report.json
 ```
 
-### Add dependency scanning (SBOM / SCA)
+### Add dependency scanning (Trivy)
 
 ```yaml
 - name: Trivy SCA scan
@@ -130,19 +80,12 @@ sonar.python.bandit.reportPaths=bandit-report.json
     severity: HIGH,CRITICAL
 ```
 
-### Change Python version
-
-Edit `python-version` in `ci.yml`. Current value: `3.11`.
-
----
-
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| `test` job fails at `pip install` | `requirements.txt` path wrong | Confirm file is at repo root, same level as `ci.yml`'s `working-directory` |
-| `sonar` job: "Project not found" | `sonar.projectKey` mismatch | Must match exactly what you created in SonarQube UI |
-| Quality Gate never resolves (timeout) | SonarQube server unreachable from GitHub runner | Confirm public URL; check firewall/security group on port 9000 |
-| PR shows no Sonar comment | PR decoration not configured | Complete step 3 (DevOps Platform Integration) in SonarQube |
-| `coverage.xml` not found by Sonar | pytest produced no output (0 tests) | `|| true` in `ci.yml` prevents failure, but Sonar needs the file — add a trivial test |
-| OpenAI import error at test time | `OPENAI_API_KEY` not stubbed | Already handled by the `env` block in `ci.yml`; if adding new keys, add them there |
+| Symptom | Fix |
+|---|---|
+| `pip install` fails | Check `backend/requirements.txt` exists |
+| "Project not found" in Sonar | `sonar.projectKey` must match exactly |
+| Quality Gate times out | SonarCloud server unreachable — check token |
+| No Sonar comment on PR | Enable PR decoration in SonarCloud project settings |
+| OpenAI import error | Add missing env vars to the `env` block in `ci.yml` |

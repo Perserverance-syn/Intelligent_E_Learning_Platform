@@ -5,8 +5,8 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: Run Tests
+  build:
+    name: Test & Scan
     runs-on: ubuntu-latest
 
     env:
@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -34,30 +36,6 @@ jobs:
             --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
             -v || true
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        if: hashFiles('coverage.xml') != ''
-        with:
-          name: coverage-report
-          path: coverage.xml
-
-  sonar:
-    name: SonarQube Scan
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download coverage artifact
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: coverage-report
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5

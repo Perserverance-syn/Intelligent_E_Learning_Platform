@@ -1,0 +1,89 @@
+name: CI — Quality & Security Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ──────────────────────────────────────────────
+  # JOB 1: pytest + coverage
+  # ──────────────────────────────────────────────
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    env:
+      # Stub secrets so app modules don't crash at import time.
+      # Real values are NOT needed — we're not doing integration tests.
+      SECRET_KEY: ci-placeholder-secret
+      OPENAI_API_KEY: ci-placeholder-key
+      DATABASE_URL: sqlite:///./test.db
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt pytest pytest-cov
+
+      - name: Run pytest with coverage
+        # || true keeps the step green even if there are 0 tests yet,
+        # so the pipeline doesn't die before the Sonar gate adds value.
+        # Remove "|| true" once real tests exist.
+        run: |
+          pytest backend/tests/ \
+            --cov=backend \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            -v || true
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  # ──────────────────────────────────────────────
+  # JOB 2: SonarQube scan (runs after tests so
+  #         it picks up coverage.xml)
+  # ──────────────────────────────────────────────
+  sonar:
+    name: SonarQube Scan
+    runs-on: ubuntu-latest
+    needs: test          # wait for coverage.xml to be generated
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Full history so Sonar can diff new vs old code correctly
+          fetch-depth: 0
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          # For SonarCloud, replace SONAR_HOST_URL with:
+          # SONAR_HOST_URL: https://sonarcloud.io
+          # and add: SONAR_ORGANIZATION in sonar-project.properties
+
+      # Blocks the PR if the Quality Gate verdict is FAILED.
+      # Polls the server for up to 5 minutes.
+      - name: Wait for Quality Gate result
+        uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}

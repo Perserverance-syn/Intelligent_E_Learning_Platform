@@ -1,0 +1,75 @@
+name: CI — Quality & Security Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    env:
+      SECRET_KEY: ci-placeholder-secret
+      OPENAI_API_KEY: ci-placeholder-key
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt pytest pytest-cov
+
+      - name: Run pytest
+        working-directory: backend
+        run: pytest tests/ -v
+
+  sonar:
+    name: SonarQube Scan
+    runs-on: ubuntu-latest
+
+    env:
+      SECRET_KEY: ci-placeholder-secret
+      OPENAI_API_KEY: ci-placeholder-key
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt pytest pytest-cov
+
+      - name: Generate coverage report
+        working-directory: backend
+        run: |
+          pytest tests/ \
+            --cov=. \
+            --cov-report=xml:../coverage.xml \
+            -v || true
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: Wait for Quality Gate result
+        uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}

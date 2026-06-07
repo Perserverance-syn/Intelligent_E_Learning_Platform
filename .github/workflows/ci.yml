@@ -5,14 +5,38 @@ on:
     branches: [main]
 
 jobs:
-  build:
-    name: Test & Scan
+  test:
+    name: Unit Tests
     runs-on: ubuntu-latest
 
     env:
       SECRET_KEY: ci-placeholder-secret
       OPENAI_API_KEY: ci-placeholder-key
-      DATABASE_URL: sqlite:///./test.db
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt pytest pytest-cov
+
+      - name: Run pytest
+        working-directory: backend
+        run: pytest tests/ -v
+
+  sonar:
+    name: SonarQube Scan
+    runs-on: ubuntu-latest
+
+    env:
+      SECRET_KEY: ci-placeholder-secret
+      OPENAI_API_KEY: ci-placeholder-key
 
     steps:
       - name: Checkout code
@@ -29,12 +53,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt pytest pytest-cov
 
-      - name: Run pytest with coverage
+      - name: Generate coverage report
+        working-directory: backend
         run: |
-          pytest backend/tests/ \
-            --cov=backend \
-            --cov-report=xml:coverage.xml \
-            --cov-report=term-missing \
+          pytest tests/ \
+            --cov=. \
+            --cov-report=xml:../coverage.xml \
             -v || true
 
       - name: SonarQube Scan

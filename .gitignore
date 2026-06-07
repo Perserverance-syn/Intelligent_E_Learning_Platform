@@ -1,6 +1,7 @@
-backend/venv/
-backend/__pycache__/
-backend/routes/__pycache__/
-backend/smartlearn.db
-backend/uploads/
-.env
+__pycache__/
+*.pyc
+.coverage
+coverage.xml
+.pytest_cache/
+*.db
+.scannerwork/

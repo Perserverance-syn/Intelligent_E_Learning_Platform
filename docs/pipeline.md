@@ -2,90 +2,47 @@
 
 ## Overview
 
-Every pull request targeting `main` must pass two gates before merging:
+Every pull request targeting `main` runs two independent checks, both required to pass before merging:
 
-| Gate | Job | Blocks PR |
-|---|---|---|
-| Unit tests | `test` | Yes |
-| SonarQube Quality Gate | `sonar` | Yes |
+| Check | Job | What it does | Blocks merge |
+|---|---|---|---|
+| Unit Tests | `test` | Runs pytest against the backend test suite | Yes — if any test fails |
+| SonarQube Scan | `sonar` | Static analysis + security scan, evaluates the Quality Gate | Yes — if the gate fails |
 
-## Files
+The two jobs run in parallel and report independently, so a test failure and a Quality Gate failure are visible as separate red checks on the PR.
 
-```
-.github/workflows/ci.yml
-sonar-project.properties
-docs/pipeline.md
-```
+## Scope
 
-## Setup
+- In scope: backend static analysis, security scanning, unit-test execution, merge enforcement.
+- Out of scope: API / integration tests. These require the full backend test suite (DB fixtures, auth tokens, mocked external calls) and are the development team's responsibility. The pipeline already runs anything placed in backend/tests/, so adding them later requires no pipeline changes.
 
-### Secrets
-
-Add these in Settings → Secrets and variables → Actions:
+## Secrets
 
 | Secret | Value |
 |---|---|
-| `SONAR_TOKEN` | Token from SonarCloud: My Account → Security → Generate Token |
-| `SONAR_HOST_URL` | `https://sonarcloud.io` |
+| SONAR_TOKEN | Token from SonarCloud → My Account → Security |
+| SONAR_HOST_URL | https://sonarcloud.io |
 
-### Branch protection on main
-
-Settings → Branches → main → Edit:
+## Branch protection (main)
 
 - Require a pull request before merging
-- Require status checks to pass:
-  - `Run Tests`
-  - `SonarQube Scan`
-- Require branches to be up to date before merging
+- Require status checks to pass: Unit Tests, SonarQube Scan
 
 ## How the Quality Gate works
 
-Uses SonarCloud's Clean as You Code mode. Only lines changed in the PR are evaluated. Pre-existing issues in untouched files do not block the PR.
+Uses SonarCloud "Sonar way" in Clean as You Code mode: only lines changed in the PR are evaluated. Pre-existing issues in untouched files do not block a PR.
 
-## Extending the pipeline
+## Demonstrating the gates
 
-### Add linting
-
-```yaml
-- name: Lint with flake8
-  run: |
-    pip install flake8
-    flake8 backend/ --max-line-length=120 --exclude=__pycache__
-```
-
-### Add SAST (Bandit)
-
-```yaml
-- name: Bandit SAST scan
-  run: |
-    pip install bandit
-    bandit -r backend/ -f json -o bandit-report.json || true
-```
-
-Add to sonar-project.properties:
-```
-sonar.python.bandit.reportPaths=bandit-report.json
-```
-
-### Add dependency scanning (Trivy)
-
-```yaml
-- name: Trivy SCA scan
-  uses: aquasecurity/trivy-action@master
-  with:
-    scan-type: fs
-    scan-ref: .
-    format: sarif
-    output: trivy-results.sarif
-    severity: HIGH,CRITICAL
-```
+- Test failure: add a failing test in backend/tests/, push → Unit Tests goes red, merge blocked.
+- Gate failure: a PR with security issues or low new-code coverage fails SonarQube Scan.
+- Pass state: clean, tested code passes both checks and is mergeable.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `pip install` fails | Check `backend/requirements.txt` exists |
-| "Project not found" in Sonar | `sonar.projectKey` must match exactly |
-| Quality Gate times out | SonarCloud server unreachable — check token |
-| No Sonar comment on PR | Enable PR decoration in SonarCloud project settings |
-| OpenAI import error | Add missing env vars to the `env` block in `ci.yml` |
+| pytest ModuleNotFoundError | Add the missing dependency, or test isolated modules |
+| folder backend/tests does not exist | Ensure the tests folder exists on the branch |
+| can't be indexed twice | Exclude the tests path from sources in sonar.exclusions |
+| Quality Gate FAILED | Expected — fix flagged issues or adjust the gate |

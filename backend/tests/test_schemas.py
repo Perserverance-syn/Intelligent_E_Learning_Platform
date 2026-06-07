@@ -1,4 +1,4 @@
-from schemas import UserCreate, LoginRequest, TokenResponse
+from schemas import UserCreate, LoginRequest
 
 
 def test_user_create_valid():
@@ -13,7 +13,8 @@ def test_login_request_valid():
     assert login.email == "ali@test.com"
 
 
-def test_token_response_valid():
-    token = TokenResponse(access_token="abc123", token_type="bearer")
-    assert token.access_token == "abc123"
-    assert token.token_type == "bearer"
+def test_user_create_requires_email():
+    import pytest
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        UserCreate(nom="Ali", password="secret", role="student")
